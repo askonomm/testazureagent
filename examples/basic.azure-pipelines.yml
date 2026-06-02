@@ -1,0 +1,37 @@
+# Basic Azure Pipelines configuration for CodeScene Refactoring Agent
+# Copy relevant parts into your project's azure-pipelines.yml
+
+# Required pipeline variables (configure in Pipelines → Library → Variable Groups):
+#   CS_ACCESS_TOKEN    - CodeScene API access token
+#   AZURE_TOKEN        - Azure DevOps PAT with Code (Read & Write) and Pull Request Threads (Read & Write) scopes
+#   ANTHROPIC_API_KEY  - (or OPENAI_API_KEY / GOOGLE_API_KEY)
+
+resources:
+  repositories:
+    - repository: cs-agent
+      type: github
+      name: codescene-oss/pr-refactoring-agent-azure
+      ref: refs/tags/v1.0.0
+      endpoint: <your-github-service-connection>
+
+trigger: none
+
+pr:
+  branches:
+    include:
+      - '*'
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+  - job: fix_code_health_degradations
+    displayName: "CodeScene — Fix Code Health Degradations"
+    condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
+    steps:
+      - checkout: self
+        persistCredentials: true
+      - template: refactoring-agent.yml@cs-agent
+        parameters:
+          command: "skill:fix-code-health-degradations"
+          model: "anthropic/claude-sonnet-4-20250514"

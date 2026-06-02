@@ -1,0 +1,210 @@
+# Azure Pipelines Steps Template for CodeScene Refactoring Agent
+#
+# Usage in your azure-pipelines.yml:
+#
+#   resources:
+#     repositories:
+#       - repository: cs-agent
+#         type: github
+#         name: codescene-oss/pr-refactoring-agent-azure
+#         ref: refs/tags/v1.0.0
+#         endpoint: <your-github-service-connection>
+#
+#   jobs:
+#     - job: refactoring_agent
+#       pool:
+#         vmImage: ubuntu-latest
+#       steps:
+#         - checkout: self
+#           persistCredentials: true
+#         - template: refactoring-agent.yml@cs-agent
+#           parameters:
+#             command: "skill:fix-code-health-degradations"
+#             model: "anthropic/claude-sonnet-4-20250514"
+
+parameters:
+  - name: command
+    type: string
+    displayName: "Refactoring command (e.g. skill:fix-code-health-degradations)"
+  - name: model
+    type: string
+    displayName: "AI model (e.g. anthropic/claude-sonnet-4-20250514)"
+  - name: version
+    type: string
+    default: "latest"
+    displayName: "Refactoring agent version (default: latest)"
+
+steps:
+  - bash: |
+      set -euo pipefail
+
+      # Validate required pipeline variables
+      MISSING=""
+      [ -z "${CS_ACCESS_TOKEN:-}" ] && MISSING="$MISSING CS_ACCESS_TOKEN"
+      [ -z "${AZURE_TOKEN:-}" ]     && MISSING="$MISSING AZURE_TOKEN"
+
+      if [ -n "$MISSING" ]; then
+        echo "##[error]Missing required pipeline variables:$MISSING"
+        echo "Configure them in Pipelines → Library → Variable Groups or pipeline settings."
+        exit 1
+      fi
+
+      echo "Required variables present."
+    displayName: "Validate required variables"
+    env:
+      CS_ACCESS_TOKEN: $(CS_ACCESS_TOKEN)
+      AZURE_TOKEN: $(AZURE_TOKEN)
+
+  - bash: |
+      set -euo pipefail
+
+      # Detect platform
+      ARCH="$(uname -m)"
+      case "$ARCH" in
+        x86_64|amd64)
+          BINARY_NAME="refactoring-agent-linux-amd64"
+          ;;
+        aarch64|arm64)
+          BINARY_NAME="refactoring-agent-linux-aarch64"
+          ;;
+        *)
+          echo "##[error]Unsupported architecture: $ARCH"
+          echo "Supported platforms: Linux x86_64, Linux aarch64"
+          exit 1
+          ;;
+      esac
+
+      VERSION="${REFACTORING_AGENT_VERSION:-${{ parameters.version }}}"
+      REPO="codescene-oss/refactoring-agent-releases"
+      ASSET_NAME="${BINARY_NAME}.zip"
+
+      if [ "$VERSION" = "latest" ]; then
+        DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${ASSET_NAME}"
+      else
+        DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
+      fi
+
+      echo "Downloading from ${DOWNLOAD_URL}..."
+
+      if ! curl -fsSL -o "${BINARY_NAME}.zip" "$DOWNLOAD_URL"; then
+        echo "##[error]Failed to download binary from ${DOWNLOAD_URL}"
+        exit 1
+      fi
+
+      echo "Successfully downloaded ${ASSET_NAME}"
+
+      unzip -q "${BINARY_NAME}.zip"
+      chmod +x "${BINARY_NAME}"
+      mv "${BINARY_NAME}" /usr/local/bin/refactoring-agent
+
+      echo "Binary installed successfully"
+    displayName: "Download refactoring-agent binary"
+
+  - bash: |
+      set -euo pipefail
+
+      git config user.name "Azure Pipelines"
+      git config user.email "azuredevops@microsoft.com"
+      echo "Git configured."
+    displayName: "Configure git"
+
+  - bash: |
+      set -euo pipefail
+
+      # Inject the PAT into the remote URL so the agent can push
+      CURRENT_URL=$(git remote get-url origin)
+      AUTHED_URL=$(echo "$CURRENT_URL" | sed "s|https://|https://x:${AZURE_TOKEN}@|")
+      git remote set-url origin "$AUTHED_URL"
+      echo "Remote URL updated with credentials."
+    displayName: "Configure git remote for push"
+    env:
+      AZURE_TOKEN: $(AZURE_TOKEN)
+
+  - bash: |
+      set -euo pipefail
+
+      COMMAND="${PARAM_COMMAND}"
+      MODEL="${PARAM_MODEL}"
+
+      # Read Azure Pipelines predefined variables
+      PR_ID="${SYSTEM_PULLREQUEST_PULLREQUESTID:-}"
+      TARGET_BRANCH="${SYSTEM_PULLREQUEST_TARGETBRANCH:-}"
+      ORG_URL="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI:-}"
+      PROJECT="${SYSTEM_TEAMPROJECT:-}"
+      REPO="${BUILD_REPOSITORY_NAME:-}"
+
+      # Strip refs/heads/ prefix from target branch if present
+      TARGET_BRANCH="${TARGET_BRANCH#refs/heads/}"
+
+      # Build CS_AGENT_CONFIG JSON
+      CS_AGENT_CONFIG=$(jq -n \
+        --arg token "${CS_ACCESS_TOKEN}" \
+        --arg onprem "${CS_ONPREM_URL:-}" \
+        --arg az_token "${AZURE_TOKEN}" \
+        --arg org_url "${ORG_URL}" \
+        --arg project "${PROJECT}" \
+        --arg repo "${REPO}" \
+        --arg pr_id "${PR_ID}" \
+        --arg base_ref "${TARGET_BRANCH}" \
+        --arg anthropic_key "$(printf '%s' "${ANTHROPIC_API_KEY:-}" | tr -d '\n')" \
+        --arg openai_key "$(printf '%s' "${OPENAI_API_KEY:-}" | tr -d '\n')" \
+        --arg google_key "$(printf '%s' "${GOOGLE_API_KEY:-}" | tr -d '\n')" \
+        --arg opencode_auth "$(printf '%s' "${OPENCODE_AUTH_JSON:-}" | tr -d '\n')" \
+        '{
+          codescene_access_token: $token,
+          tracking: { environment: "azure-pipelines" },
+          provider: ({}
+            + (if $anthropic_key != "" then { anthropic_api_key: $anthropic_key } else {} end)
+            + (if $openai_key     != "" then { openai_api_key: $openai_key }     else {} end)
+            + (if $google_key     != "" then { google_api_key: $google_key }     else {} end)
+            + (if $opencode_auth  != "" then { opencode_auth_json: $opencode_auth } else {} end))
+        }
+        + (if $onprem != "" then { codescene_onprem_url: $onprem } else {} end)
+        + (if $pr_id != "" then {
+            git: { base_ref: $base_ref },
+            ci: {
+              azure: {
+                token: $az_token,
+                org_url: $org_url,
+                project: $project,
+                repo: $repo,
+                pr_id: $pr_id
+              }
+            }
+          } else {} end)')
+
+      export CS_AGENT_CONFIG
+
+      # Mask config in logs (it contains tokens)
+      echo "##vso[task.setvariable variable=CS_AGENT_CONFIG;issecret=true]${CS_AGENT_CONFIG}"
+
+      # Prepend azure-pr-comment skill when running in a PR
+      if [ -n "$PR_ID" ]; then
+        FULL_COMMAND="skill:azure-pr-comment ${COMMAND}"
+        echo "PR context detected (PR #${PR_ID}), prepending azure-pr-comment skill"
+      else
+        FULL_COMMAND="${COMMAND}"
+        echo "No PR context, running without azure-pr-comment skill"
+      fi
+
+      echo "Command: ${FULL_COMMAND}"
+      echo "Model:   ${MODEL}"
+
+      refactoring-agent run "$FULL_COMMAND" --model "$MODEL" --push
+    displayName: "Run refactoring agent"
+    env:
+      PARAM_COMMAND: ${{ parameters.command }}
+      PARAM_MODEL: ${{ parameters.model }}
+      CS_ACCESS_TOKEN: $(CS_ACCESS_TOKEN)
+      AZURE_TOKEN: $(AZURE_TOKEN)
+      CS_ONPREM_URL: $(CS_ONPREM_URL)
+      ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+      OPENAI_API_KEY: $(OPENAI_API_KEY)
+      GOOGLE_API_KEY: $(GOOGLE_API_KEY)
+      OPENCODE_AUTH_JSON: $(OPENCODE_AUTH_JSON)
+      # Azure Pipelines predefined variables must be explicitly mapped to env vars
+      SYSTEM_PULLREQUEST_PULLREQUESTID: $(System.PullRequest.PullRequestId)
+      SYSTEM_PULLREQUEST_TARGETBRANCH: $(System.PullRequest.TargetBranch)
+      SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: $(System.TeamFoundationCollectionUri)
+      SYSTEM_TEAMPROJECT: $(System.TeamProject)
+      BUILD_REPOSITORY_NAME: $(Build.Repository.Name)
