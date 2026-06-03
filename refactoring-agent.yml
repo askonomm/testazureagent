@@ -33,6 +33,14 @@ parameters:
     type: string
     default: "latest"
     displayName: "Refactoring agent version (default: latest)"
+  - name: pr_id
+    type: string
+    default: ""
+    displayName: "Pull Request ID (overrides System.PullRequest.PullRequestId)"
+  - name: target_branch
+    type: string
+    default: ""
+    displayName: "Target branch (overrides System.PullRequest.TargetBranch)"
 
 steps:
   - bash: |
@@ -126,9 +134,9 @@ steps:
       COMMAND="${PARAM_COMMAND}"
       MODEL="${PARAM_MODEL}"
 
-      # Read Azure Pipelines predefined variables
-      PR_ID="${SYSTEM_PULLREQUEST_PULLREQUESTID:-}"
-      TARGET_BRANCH="${SYSTEM_PULLREQUEST_TARGETBRANCH:-}"
+      # Read Azure Pipelines predefined variables (manual overrides take precedence)
+      PR_ID="${PARAM_PR_ID:-${SYSTEM_PULLREQUEST_PULLREQUESTID:-}}"
+      TARGET_BRANCH="${PARAM_TARGET_BRANCH:-${SYSTEM_PULLREQUEST_TARGETBRANCH:-}}"
       ORG_URL="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI:-}"
       PROJECT="${SYSTEM_TEAMPROJECT:-}"
       REPO="${BUILD_REPOSITORY_NAME:-}"
@@ -205,6 +213,9 @@ steps:
       # Azure Pipelines predefined variables must be explicitly mapped to env vars
       SYSTEM_PULLREQUEST_PULLREQUESTID: $(System.PullRequest.PullRequestId)
       SYSTEM_PULLREQUEST_TARGETBRANCH: $(System.PullRequest.TargetBranch)
+      # Manual overrides — take precedence over predefined variables when set
+      PARAM_PR_ID: ${{ parameters.pr_id }}
+      PARAM_TARGET_BRANCH: ${{ parameters.target_branch }}
       SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: $(System.TeamFoundationCollectionUri)
       SYSTEM_TEAMPROJECT: $(System.TeamProject)
       BUILD_REPOSITORY_NAME: $(Build.Repository.Name)
