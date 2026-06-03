@@ -41,6 +41,10 @@ parameters:
     type: string
     default: ""
     displayName: "Target branch (overrides System.PullRequest.TargetBranch)"
+  - name: print_logs
+    type: boolean
+    default: false
+    displayName: "Print OpenCode logs"
 
 steps:
   - bash: |
@@ -149,6 +153,7 @@ steps:
 
       # Build CS_AGENT_CONFIG JSON
       CS_AGENT_CONFIG=$(jq -n \
+        --argjson print_logs "${PARAM_PRINT_LOGS}" \
         --arg token "${CS_ACCESS_TOKEN}" \
         --arg onprem "$(sanitize "${CS_ONPREM_URL:-}")" \
         --arg az_token "${AZURE_TOKEN}" \
@@ -163,6 +168,7 @@ steps:
         --arg opencode_auth "$(sanitize "${OPENCODE_AUTH_JSON:-}")" \
         '{
           codescene_access_token: $token,
+          print_logs: $print_logs,
           tracking: { environment: "azure-pipelines" },
           provider: ({}
             + (if $anthropic_key != "" then { anthropic_api_key: $anthropic_key } else {} end)
@@ -198,8 +204,7 @@ steps:
         echo "No PR context, running without azure-pr-comment skill"
       fi
 
-      echo "Command: ${FULL_COMMAND}"
-      echo "Model:   ${MODEL}"
+      echo "Running: refactoring-agent run ${FULL_COMMAND} --model ${MODEL} --push"
 
       refactoring-agent run "$FULL_COMMAND" --model "$MODEL" --push
     displayName: "Run refactoring agent"
@@ -219,6 +224,7 @@ steps:
       # Manual overrides — take precedence over predefined variables when set
       PARAM_PR_ID: ${{ parameters.pr_id }}
       PARAM_TARGET_BRANCH: ${{ parameters.target_branch }}
+      PARAM_PRINT_LOGS: ${{ parameters.print_logs }}
       SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: $(System.TeamFoundationCollectionUri)
       SYSTEM_TEAMPROJECT: $(System.TeamProject)
       BUILD_REPOSITORY_NAME: $(Build.Repository.Name)
