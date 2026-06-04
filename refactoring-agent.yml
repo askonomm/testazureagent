@@ -153,7 +153,7 @@ steps:
 
       # Build CS_AGENT_CONFIG JSON
       CS_AGENT_CONFIG=$(jq -n \
-        --argjson print_logs "${PARAM_PRINT_LOGS}" \
+        --argjson print_logs "$(echo "${PARAM_PRINT_LOGS}" | tr '[:upper:]' '[:lower:]')" \
         --arg token "${CS_ACCESS_TOKEN}" \
         --arg onprem "$(sanitize "${CS_ONPREM_URL:-}")" \
         --arg az_token "${AZURE_TOKEN}" \
