@@ -132,6 +132,7 @@ steps:
     env:
       AZURE_TOKEN: $(AZURE_TOKEN)
 
+
   - bash: |
       set -euo pipefail
 
@@ -206,7 +207,7 @@ steps:
 
       echo "Running: refactoring-agent run ${FULL_COMMAND} --model ${MODEL} --push"
 
-      refactoring-agent run "$FULL_COMMAND" --model "$MODEL" --push
+      refactoring-agent run "$FULL_COMMAND" --model "$MODEL" --push </dev/null
     displayName: "Run refactoring agent"
     env:
       PARAM_COMMAND: ${{ parameters.command }}
