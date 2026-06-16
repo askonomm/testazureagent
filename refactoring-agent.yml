@@ -125,7 +125,8 @@ steps:
 
       # Inject the PAT into the remote URL so the agent can push
       CURRENT_URL=$(git remote get-url origin)
-      AUTHED_URL=$(echo "$CURRENT_URL" | sed "s|https://|https://x:${AZURE_TOKEN}@|")
+      CLEAN_URL=$(echo "$CURRENT_URL" | sed "s|https://[^@]*@|https://|")
+      AUTHED_URL=$(echo "$CLEAN_URL" | sed "s|https://|https://x:${AZURE_TOKEN}@|")
       git remote set-url origin "$AUTHED_URL"
       echo "Remote URL updated with credentials."
     displayName: "Configure git remote for push"
