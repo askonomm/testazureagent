@@ -118,7 +118,30 @@ steps:
       git config user.name "Azure Pipelines"
       git config user.email "azuredevops@microsoft.com"
       echo "Git configured."
+
+      # Check out the PR source branch so we're not in detached HEAD state.
+      PR_ID="${PARAM_PR_ID:-}"
+      ORG_URL="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI:-}"
+      PROJECT="${SYSTEM_TEAMPROJECT:-}"
+      REPO="${BUILD_REPOSITORY_NAME:-}"
+
+      if [ -n "$PR_ID" ] && [ -n "$ORG_URL" ] && [ -n "$PROJECT" ] && [ -n "$REPO" ]; then
+        SOURCE_BRANCH=$(curl -sf \
+          -u "x:${AZURE_TOKEN}" \
+          "${ORG_URL}${PROJECT}/_apis/git/repositories/${REPO}/pullRequests/${PR_ID}?api-version=7.1" \
+          | jq -r '.sourceRefName' | sed 's|refs/heads/||')
+        echo "PR #${PR_ID} source branch: $SOURCE_BRANCH"
+        git fetch origin "$SOURCE_BRANCH"
+        git checkout "$SOURCE_BRANCH"
+        echo "Checked out branch: $SOURCE_BRANCH"
+      else
+        echo "No PR ID available, staying on current checkout."
+        git status
+      fi
     displayName: "Configure git"
+    env:
+      PARAM_PR_ID: ${{ parameters.pr_id }}
+      AZURE_TOKEN: $(AZURE_TOKEN)
 
   - bash: |
       set -euo pipefail
