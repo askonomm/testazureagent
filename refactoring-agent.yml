@@ -31,8 +31,8 @@ parameters:
     displayName: "AI model (e.g. anthropic/claude-sonnet-4-20250514)"
   - name: version
     type: string
-    default: "v1.0.4-beta1"
-    displayName: "Refactoring agent version (default: v1.0.4-beta1)"
+    default: "v1.0.4-beta3"
+    displayName: "Refactoring agent version (default: v1.0.4-beta3)"
   - name: pr_id
     type: string
     default: ""
@@ -204,6 +204,7 @@ steps:
         + (if $onprem != "" then { codescene_onprem_url: $onprem } else {} end)
         + (if $pr_id != "" then {
             git: { base_ref: $base_ref },
+            plugins: ["azure-pr-status-reporter"],
             ci: {
               azure: {
                 token: $az_token,
@@ -220,18 +221,9 @@ steps:
       # Mask config in logs (it contains tokens)
       echo "##vso[task.setvariable variable=CS_AGENT_CONFIG;issecret=true]${CS_AGENT_CONFIG}"
 
-      # Prepend azure-pr-comment skill when running in a PR
-      if [ -n "$PR_ID" ]; then
-        FULL_COMMAND="skill:azure-pr-comment ${COMMAND}"
-        echo "PR context detected (PR #${PR_ID}), prepending azure-pr-comment skill"
-      else
-        FULL_COMMAND="${COMMAND}"
-        echo "No PR context, running without azure-pr-comment skill"
-      fi
+      echo "Running: refactoring-agent run ${COMMAND} --model ${MODEL} --push"
 
-      echo "Running: refactoring-agent run ${FULL_COMMAND} --model ${MODEL} --push"
-
-      refactoring-agent run "$FULL_COMMAND" --model "$MODEL" --push </dev/null
+      refactoring-agent run "$COMMAND" --model "$MODEL" --push </dev/null
     displayName: "Run refactoring agent"
     env:
       PARAM_COMMAND: ${{ parameters.command }}
