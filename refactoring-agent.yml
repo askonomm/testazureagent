@@ -167,8 +167,8 @@ steps:
       sanitize() { case "$1" in \$\(*\)) echo "" ;; *) echo "$1" ;; esac; }
 
       # Read Azure Pipelines predefined variables (manual overrides take precedence)
-      PR_ID="${PARAM_PR_ID:-${SYSTEM_PULLREQUEST_PULLREQUESTID:-}}"
-      TARGET_BRANCH="${PARAM_TARGET_BRANCH:-${SYSTEM_PULLREQUEST_TARGETBRANCH:-}}"
+      PR_ID="${PARAM_PR_ID:-${CS_PR_ID:-${SYSTEM_PULLREQUEST_PULLREQUESTID:-}}}"
+      TARGET_BRANCH="${PARAM_TARGET_BRANCH:-${CS_TARGET_BRANCH:-${SYSTEM_PULLREQUEST_TARGETBRANCH:-}}}"
       ORG_URL="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI:-}"
       PROJECT="${SYSTEM_TEAMPROJECT:-}"
       REPO="${BUILD_REPOSITORY_NAME:-}"
